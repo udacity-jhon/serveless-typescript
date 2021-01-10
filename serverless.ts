@@ -1,10 +1,14 @@
 import type {AWS} from '@serverless/typescript';
 
-import GetGroups from './src/functions/getGroups';
-import CreateGroup from './src/functions/createGroup';
-import CreateImage from './src/functions/createImage';
-import GetOrders from './src/functions/getOrders';
-import GetImage from './src/functions/getImage';
+import GetGroups from './src/functions/http/getGroups';
+import CreateGroup from './src/functions/http/createGroup';
+import CreateImage from './src/functions/http/createImage';
+import GetOrders from './src/functions/http/getOrders';
+import GetImage from './src/functions/http/getImage';
+import SendUploadNotifications from './src/functions/s3/sendUploadNotifications';
+import ConnectHandler from './src/functions/websocket/connectHandler';
+import DisconnectHandler from './src/functions/websocket/disconnectHandler';
+import SyncWithElasticsearch from './src/functions/dynamoDB/elasticSearchSync';
 
 const serverlessConfiguration: AWS = {
   service: 'service-10-udagram-app',
@@ -28,7 +32,9 @@ const serverlessConfiguration: AWS = {
       GROUPS_TABLE: "Groups-${self:provider.stage}",
       IMAGES_TABLE: "Images-${self:provider.stage}",
       IMAGE_ID_INDEX: 'ImageIdIndex',
-      IMAGES_S3_BUCKET: 'serverless-udagram-images-${self:provider.stage}',
+      IMAGES_S3_BUCKET: 'jhon-serverless-udagram-images-${self:provider.stage}',
+      SIGNED_URL_EXPIRATION: '300',
+      CONNECTIONS_TABLE: 'Connections-${self:provider.stage}'
     },
     lambdaHashingVersion: '20201221',
     region: "us-east-1",
@@ -58,6 +64,20 @@ const serverlessConfiguration: AWS = {
         ],
         Resource: "arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.IMAGES_TABLE}/index/${self:provider.environment.IMAGE_ID_INDEX}",
       },
+      {
+        Effect: 'Allow',
+        Action: [ 's3:PutObject', 's3:GetObject' ],
+        Resource: 'arn:aws:s3:::${self:provider.environment.IMAGES_S3_BUCKET}/*'
+      },
+      {
+        "Effect": "Allow",
+        "Action": [
+          "dynamodb:Scan",
+          "dynamodb:PutItem",
+          "dynamodb:DeleteItem"
+        ],
+        "Resource": "arn:aws:dynamodb:${opt:region, self:provider.region}:*:table/${self:provider.environment.CONNECTIONS_TABLE}"
+      },
     ],
   },
   resources: {
@@ -81,7 +101,26 @@ const serverlessConfiguration: AWS = {
           "TableName": "${self:provider.environment.GROUPS_TABLE}"
         }
       },
-      "ImagesDynamoDBTable": {
+      "WebSocketConnectionsDynamoDBTable": {
+        "Type": "AWS::DynamoDB::Table",
+        "Properties": {
+          "AttributeDefinitions": [
+            {
+              "AttributeName": "id",
+              "AttributeType": "S"
+            }
+          ],
+          "KeySchema": [
+            {
+              "AttributeName": "id",
+              "KeyType": "HASH"
+            }
+          ],
+          "BillingMode": "PAY_PER_REQUEST",
+          "TableName": "${self:provider.environment.CONNECTIONS_TABLE}"
+        }
+      },
+      ImagesDynamoDBTable: {
         "Type": "AWS::DynamoDB::Table",
         "Properties": {
           "AttributeDefinitions": [
@@ -109,6 +148,9 @@ const serverlessConfiguration: AWS = {
             }
           ],
           "BillingMode": "PAY_PER_REQUEST",
+          StreamSpecification: {
+            StreamViewType: 'NEW_IMAGE',
+          },
           "TableName": "${self:provider.environment.IMAGES_TABLE}",
           "GlobalSecondaryIndexes": [
             {
@@ -126,18 +168,25 @@ const serverlessConfiguration: AWS = {
           ]
         }
       },
+      SendUploadNotificationsPermission: {
+        Type: "AWS::Lambda::Permission",
+        Properties: {
+          FunctionName: { Ref: 'SendUploadNotificationsLambdaFunction' },
+          Principal: "s3.amazonaws.com",
+          Action: "lambda:InvokeFunction",
+          SourceAccount: { Ref: 'AWS::AccountId' },
+          SourceArn: "arn:aws:s3:::${self:provider.environment.IMAGES_S3_BUCKET}"
+        }
+      },
       "AttachmentsBucket": {
         "Type": "AWS::S3::Bucket",
-        "DependsOn": ["SNSTopicPolicy"],
         "Properties": {
-          "BucketName": "${self:provider.environment.IMAGES_S3_BUCKET}",
-          "NotificationConfiguration": {
-            "TopicConfigurations": [
-              {
-                "Event": "s3:ObjectCreated:Put",
-                "Topic": "!Ref ImagesTopic"
-              }
-            ]
+          BucketName: "${self:provider.environment.IMAGES_S3_BUCKET}",
+          NotificationConfiguration: {
+            LambdaConfigurations: [{
+              Event: 's3:ObjectCreated:*',
+              Function: {"Fn::GetAtt": ["SendUploadNotificationsLambdaFunction", "Arn"]},
+            }],
           },
           "CorsConfiguration": {
             "CorsRules": [
@@ -177,9 +226,41 @@ const serverlessConfiguration: AWS = {
               }
             ]
           },
-          "Bucket": "!Ref AttachmentsBucket"
-        }
-      }
+          "Bucket": { Ref: "AttachmentsBucket" },
+        },
+      },
+      // ImagesSearch: {
+      //   "Type": "AWS::Elasticsearch::Domain",
+      //   "Properties": {
+      //     "ElasticsearchVersion": "6.3",
+      //     "DomainName": "images-search-${self:provider.stage}",
+      //     "ElasticsearchClusterConfig": {
+      //       "DedicatedMasterEnabled": false,
+      //       "InstanceCount": "1",
+      //       "ZoneAwarenessEnabled": false,
+      //       "InstanceType": "t2.small.elasticsearch"
+      //     },
+      //     "EBSOptions": {
+      //       "EBSEnabled": true,
+      //       "Iops": 0,
+      //       "VolumeSize": 10,
+      //       "VolumeType": "gp2"
+      //     },
+      //     "AccessPolicies": {
+      //       "Version": "2012-10-17",
+      //       "Statement": [
+      //         {
+      //           "Effect": "Allow",
+      //           "Principal": {
+      //             "AWS": "*"
+      //           },
+      //           "Action": "es:ESHttp*",
+      //           "Resource": { 'Fn::Sub': 'arn:aws:es:${self:provider.region}:${AWS::AccountId}:domain/images-search-${self:provider.stage}/*' },
+      //         }
+      //       ]
+      //     }
+      //   }
+      // }
     }
   },
   functions: {
@@ -188,6 +269,10 @@ const serverlessConfiguration: AWS = {
     GetOrders,
     GetImage,
     CreateImage,
+    SendUploadNotifications,
+    ConnectHandler,
+    DisconnectHandler,
+    // SyncWithElasticsearch,
   },
 }
 
