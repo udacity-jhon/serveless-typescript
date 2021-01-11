@@ -1,30 +1,25 @@
 import 'source-map-support/register';
 
-import * as AWS from 'aws-sdk';
-import {middyfy} from '@libs/lambda';
-import {APIGatewayProxyHandler} from "aws-lambda";
+import {getAllGroups} from "../../../businessLogic/groups";
+import * as express from 'express'
+import * as awsServerlessExpress from 'aws-serverless-express'
 
-const docClient = new AWS.DynamoDB.DocumentClient()
 
-const groupsTable = process.env.GROUPS_TABLE;
+const app = express();
 
-const getGroups: APIGatewayProxyHandler = async () => {
 
-  const result = await docClient.scan({
-    TableName: groupsTable,
-  }).promise();
+app.get('/groups', async (_req, res) => {
+  // TODO: get all groups as before
+  const groups = await getAllGroups();
 
-  const items = result.Items;
+  // Return a list of groups
+  res.json({
+    items: groups
+  })
+})
 
-  return {
-    statusCode: 200,
-    headers: {
-      'Access-Control-Allow-Origin': '*'
-    },
-    body: JSON.stringify({
-      items,
-    })
-  }
-}
 
-export const main = middyfy(getGroups);
+// Create Express server
+const server = awsServerlessExpress.createServer(app)
+// Pass API Gateway events to the Express server
+export const main = (event, context) => { awsServerlessExpress.proxy(server, event, context) }

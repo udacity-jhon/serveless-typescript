@@ -12,8 +12,8 @@ export const main: APIGatewayProxyHandler = async (event) => {
   const imageId = event.pathParameters.imageId;
 
   const result = await docClient.query({
-    TableName : imagesTable,
-    IndexName : imageIdIndex,
+    TableName: imagesTable,
+    IndexName: imageIdIndex,
     KeyConditionExpression: 'imageId = :imageId',
     ExpressionAttributeValues: {
       ':imageId': imageId

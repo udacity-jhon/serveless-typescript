@@ -1,9 +1,9 @@
 import 'source-map-support/register';
-
 import * as AWS from 'aws-sdk';
-import {APIGatewayProxyHandler} from "aws-lambda";
 import {groupExists} from "../getOrders/handler";
 import * as uuid from 'uuid';
+import * as middy from 'middy';
+import { cors } from 'middy/middlewares';
 
 const docClient = new AWS.DynamoDB.DocumentClient();
 
@@ -15,16 +15,13 @@ const s3 = new AWS.S3({
   signatureVersion: 'v4'
 });
 
-export const main: APIGatewayProxyHandler = async (event) => {
+export const main = middy(async (event) => {
   const groupId = event.pathParameters.groupId;
   const validGroupId = await groupExists(groupId)
 
   if (!validGroupId) {
     return {
       statusCode: 404,
-      headers: {
-        'Access-Control-Allow-Origin': '*'
-      },
       body: JSON.stringify({
         error: 'Group does not exist'
       })
@@ -51,15 +48,12 @@ export const main: APIGatewayProxyHandler = async (event) => {
 
   return {
     statusCode: 201,
-    headers: {
-      'Access-Control-Allow-Origin': '*'
-    },
     body: JSON.stringify({
       newItem,
       uploadUrl: url
     })
   }
-}
+})
 
 function getUploadUrl(imageId: string) {
   return s3.getSignedUrl('putObject', {
@@ -68,3 +62,9 @@ function getUploadUrl(imageId: string) {
     Expires: urlExpiration
   });
 }
+
+main.use(
+  cors({
+    credentials: true,
+  })
+)
