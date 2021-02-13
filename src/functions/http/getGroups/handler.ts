@@ -20,6 +20,6 @@ app.get('/groups', async (_req, res) => {
 
 
 // Create Express server
-const server = awsServerlessExpress.createServer(app)
+const server = awsServerlessExpress.createServer(app);
 // Pass API Gateway events to the Express server
 export const main = (event, context) => { awsServerlessExpress.proxy(server, event, context) }

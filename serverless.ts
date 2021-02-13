@@ -126,9 +126,9 @@ const serverlessConfiguration: AWS = {
   },
   resources: {
     Resources: {
-      "GroupsDynamoDBTable": {
+      GroupsDynamoDBTable: {
         "Type": "AWS::DynamoDB::Table",
-        "Properties": {
+        Properties: {
           "AttributeDefinitions": [
             {
               "AttributeName": "id",
@@ -196,7 +196,7 @@ const serverlessConfiguration: AWS = {
             StreamViewType: 'NEW_IMAGE',
           },
           "TableName": "${self:provider.environment.IMAGES_TABLE}",
-          "GlobalSecondaryIndexes": [
+          GlobalSecondaryIndexes: [
             {
               "IndexName": "${self:provider.environment.IMAGE_ID_INDEX}",
               "KeySchema": [
@@ -232,7 +232,7 @@ const serverlessConfiguration: AWS = {
               Topic: {Ref: 'ImagesTopic'},
             }],
           },
-          "CorsConfiguration": {
+          CorsConfiguration: {
             "CorsRules": [
               {
                 "AllowedOrigins": [
@@ -254,7 +254,7 @@ const serverlessConfiguration: AWS = {
           }
         }
       },
-      "BucketPolicy": {
+      BucketPolicy: {
         "Type": "AWS::S3::BucketPolicy",
         "Properties": {
           "PolicyDocument": {

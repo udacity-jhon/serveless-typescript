@@ -1,4 +1,4 @@
-import * as AWS from 'aws-sdk';
+  import * as AWS from 'aws-sdk';
 import * as AWSXRay from 'aws-xray-sdk';
 import {DocumentClient} from 'aws-sdk/clients/dynamodb';
 import {Group} from '../libs/models/Group';
